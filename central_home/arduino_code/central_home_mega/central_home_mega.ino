@@ -20,7 +20,7 @@ LiquidCrystal_I2C lcd(0x27,2,1,0,4,5,6,7,3, POSITIVE);
 #define green 7
 #define blue 5
 // variavel sensor corrente
-const int pinoSensor = A2; 
+const int pinoSensor = A8; 
 
 // Variaveis rele
 #define rele1 53
@@ -56,9 +56,10 @@ IRrecv irrecv(RECV_PIN);
 decode_results results;  
 
 // Variaveis sensor corrrente
-#define CURRENT_CAL 18.40 
-EnergyMonitor emon1;
-double currentDraw,ruido = 0.07;
+EnergyMonitor emon1;        // Cria uma instância
+#define CURRENT_CAL 22.40   //VALOR DE CALIBRAÇÃO
+float ruido = 0.4;         //RUÍDO PRODUZIDO NA SAÍDA DO SENSOR
+double currentDraw = 0;
 
 String day = "", hour ="", month = "";
 
@@ -110,7 +111,9 @@ void setup(){
   setOnOff(rele7,false);
   setOnOff(rele8,false);
 
+  //emon1.current(pinoSensor, CURRENT_CAL);
   emon1.current(pinoSensor, CURRENT_CAL);
+  
   millisLcd = millis();
 }
  
@@ -301,16 +304,17 @@ void setUsb(bool option){
 }
 
 void getPowerCurrent(){
-  emon1.calcVI(17, 100);
-  currentDraw = emon1.Irms; 
-  currentDraw-=ruido; 
-  if(currentDraw < 0){ 
-      currentDraw = 0;
-  }
- 
-  //Serial.print("Corrente medida: ");
-  //Serial.print(currentDraw); 
-  //Serial.println("A");
+   emon1.calcVI(17, 100); //FUNÇÃO DE CÁLCULO (17 SEMICICLOS / TEMPO LIMITE PARA FAZER A MEDIÇÃO)
+   currentDraw = emon1.Irms; //VARIÁVEL RECEBE O VALOR DE CORRENTE RMS OBTIDO
+   currentDraw = currentDraw-ruido; //VARIÁVEL RECEBE O VALOR RESULTANTE DA CORRENTE RMS MENOS O RUÍDO
+  
+   if(currentDraw < 0){ //SE O VALOR DA VARIÁVEL FOR MENOR QUE 0, FAZ 
+      currentDraw = 0; //VARIÁVEL RECEBE 0
+   }
+   Serial.print("Corrente medida: ");
+   Serial.print(currentDraw);
+   Serial.println("A");
+     
 }
  
 //Funções responsáveis por executar o brilho selecionado
