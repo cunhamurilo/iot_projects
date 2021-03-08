@@ -6,6 +6,7 @@ Some of projects using arduino and esp8266. Using some services open source from
  - Firebase
  - NTP - Network Time Protocol
  - Adafruit IO (Web Service)
+ - Adafruit display
  - Zapier (Web service)
  - Open Weather Map (Web Service)
  - Serial Comunication
