@@ -8,8 +8,6 @@
 #include <FS.h>
 #include <WiFiManager.h>
 
-WiFiManager wifiManager;//Objeto de manipulação do wi-fi
-
 #define FIREBASE_HOST "your firebase id"
 #define FIREBASE_AUTH "your firebase auth database"
 
@@ -20,6 +18,8 @@ const char *ssid     = ""; // your ssid if start connection
 const char *password = "";// your password if start connection
 
 const long utcOffsetInSeconds = -10800;
+
+WiFiManager wifiManager;//Objeto de manipulação do wi-fi
 
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
