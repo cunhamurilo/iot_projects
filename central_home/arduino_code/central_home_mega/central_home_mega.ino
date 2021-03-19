@@ -215,15 +215,15 @@ void showDisplay(){
   }
   
   if( (millis() - millisLcd) < 15000 ){
-  lcd.clear();
-  lcd.setBacklight(HIGH);
-  if(showHour){
-    printHour(0);
-    printTemp(distance);
-  }else{
-    printTemp(0);
-    printHour(distance);
-  }
+    lcd.clear();
+    lcd.setBacklight(HIGH);
+    if(showHour){
+      printHour(0);
+      printTemp(distance);
+    }else{
+      printTemp(0);
+      printHour(distance);
+    }
   }
 }
 
