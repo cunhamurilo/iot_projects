@@ -19,6 +19,8 @@ LiquidCrystal_I2C lcd(0x27,2,1,0,4,5,6,7,3, POSITIVE);
 #define red 6
 #define green 7
 #define blue 5
+#define button 3
+ 
 // variavel sensor corrente
 const int pinoSensor = A8; 
 
@@ -82,6 +84,7 @@ void setup(){
   pinMode(red, OUTPUT);   
   pinMode(green, OUTPUT); 
   pinMode(blue, OUTPUT); 
+  pinMode(button,INPUT);
    
   pinMode(rele1, OUTPUT);   
   pinMode(rele2, OUTPUT); 
@@ -131,6 +134,7 @@ void loop()
     setUsb(true);
 
   check_serial();
+  resetClick();
 
   showDisplay();
   delay(300);
@@ -189,6 +193,13 @@ String getValue(String data, char separator, int index)
         }
     }
     return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void resetClick(){
+    if (digitalRead(button) == HIGH) {
+        Serial.println("click button");
+        Serial1.write("reset");
+    }
 }
 
 void showDisplay(){
@@ -311,9 +322,9 @@ void getPowerCurrent(){
    if(currentDraw < 0){ //SE O VALOR DA VARIÁVEL FOR MENOR QUE 0, FAZ 
       currentDraw = 0; //VARIÁVEL RECEBE 0
    }
-   Serial.print("Corrente medida: ");
-   Serial.print(currentDraw);
-   Serial.println("A");
+//   Serial.print("Corrente medida: ");
+//   Serial.print(currentDraw);
+//   Serial.println("A");
      
 }
  
