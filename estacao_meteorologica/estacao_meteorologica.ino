@@ -8,6 +8,7 @@
 #include <time.h>
 #include <WiFiUdp.h>
 #include <Wire.h>
+#include <WiFiManager.h>
 #include "OpenWeatherMapOneCall.h"
 
 // Pinos
@@ -17,10 +18,11 @@
 #define TFT_MOSI      13
 #define TFT_SCLK      14
 #define DHT_PIN       12  
+#define PINO_RESET       16  
 
 //Definições WiFi
-const char* WIFI_SSID     = "your ssid";
-const char* WIFI_PASSWORD = "your password";
+const char* WIFI_SSID     = ""; // put your ssid if start connect
+const char* WIFI_PASSWORD = ""; // put your ssid if start connect
 WiFiClient wifiClient;
 
 // Definições Cliente NTP
@@ -28,6 +30,8 @@ WiFiUDP ntpUDP;
 const long utcOffsetInSeconds = -10800;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
 
+WiFiManager wifiManager;//Objeto de manipulação do wi-fi
+ 
 //Definições Open Weather Map 
 String OPEN_WEATHER_MAP_APP_ID = "your id";
 //Go to https://www.latlong.net/ 
@@ -106,70 +110,111 @@ void setup() {
   // Inicialização comunicação serial
   Serial.begin(115200);
 
-  // Inicialização WiFi
-  connectWifi();
-  
-  // Inicialização cliente NTP
-  timeClient.begin();
-  timeClient.update();
+  pinMode(PINO_RESET, INPUT);
 
   // Inicialização display
   tft.initR(INITR_BLACKTAB);
-  tft.fillScreen(CHUMBO);
-  tft.setTextSize(1);
-  tft.setTextColor(BRANCO);
-  tft.setCursor(25,70);
-  tft.print("Conectando...");
-  delay(7000);
   
-  // Inicialização DHT11
-  dht.begin();
-  
-  // Inicialização BMP180
-  bmp.begin();
+  if (WiFi.SSID() != "") {
+
+    // Show display
+    tft.fillScreen(CHUMBO);
+    tft.setTextSize(1);
+    tft.setTextColor(BRANCO);
+    tft.setCursor(25,70);
+    tft.print("Conectando...");
+    
+    // Inicialização WiFi
+    connectWiFi();
+    
+    // Inicialização cliente NTP
+    timeClient.begin();
+    timeClient.update();
+    
+    delay(7000);
+    
+    // Inicialização DHT11
+    dht.begin();
+    
+    // Inicialização BMP180
+    bmp.begin();
+  }else{
+    tft.fillScreen(CHUMBO);
+    tft.setTextSize(1);
+    tft.setTextColor(BRANCO);
+    tft.setCursor(25,70);
+    tft.print("Sem rede");
+  }
 }
 
 void loop() {
+  resetClick();
   
-  tft.fillScreen(CHUMBO);
-  data();
-  horario();
-  temperatura();
-  delay(10000);
+  if(WiFi.status() == WL_CONNECTED){
+    resetClick();
+    tft.fillScreen(CHUMBO);
+    resetClick();
+    data();
+    resetClick();
+    horario();
+    resetClick();
+    temperatura();
+    resetClick();
+    delay(10000);
+    resetClick();
+    
+    resetClick();
+    tft.fillScreen(CHUMBO);
+    resetClick();
+    data();
+    resetClick();
+    horario(); 
+    resetClick();
+    umidade();
+    delay(10000);
+    resetClick();
   
-  tft.fillScreen(CHUMBO);
-  data();
-  horario(); 
-  umidade();
-  delay(10000);
-
-  tft.fillScreen(CHUMBO);
-  data();
-  horario(); 
-  pressao();
-  delay(10000);
-  
-  
-  tft.fillScreen(CHUMBO);
-  data();
-  horario();
-  previsao();
-  delay(10000);
+    resetClick();
+    tft.fillScreen(CHUMBO);
+    resetClick();
+    data();
+    resetClick();
+    horario(); 
+    resetClick();
+    pressao();
+    delay(10000);
+    resetClick();
+    
+    resetClick();
+    tft.fillScreen(CHUMBO);
+    resetClick();
+    data();
+    resetClick();
+    horario();
+    resetClick();
+    previsao();
+    delay(10000);
+    resetClick();
+  }else{
+     if(WiFi.SSID() != ""){
+        connectWiFi();
+     }
+  }
 }
 
-void connectWifi() {
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+void connectWiFi() {
   Serial.print("Conectando...");
   Serial.println(WIFI_SSID);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+    resetClick();
+    delay(400);
     Serial.print(".");
   }
   Serial.println("");
   Serial.println("Conectado!");
   Serial.println(WiFi.localIP());
   Serial.println();
-  delay(7000);
+  delay(4000);
 }
 
 void data(){
@@ -453,4 +498,52 @@ void previsao() {
     tft.drawBitmap(3,120,sol2,48,48,SOL2);
     tft.drawBitmap(3,120,sol3,48,48,PRETO);
   }
+}
+
+void resetClick(){
+    if (digitalRead(PINO_RESET) == HIGH) {
+       delay(20);
+       
+       tft.fillScreen(CHUMBO);
+       tft.setTextSize(1);
+       tft.setTextColor(BRANCO);
+       tft.setCursor(25,70);
+       tft.print("Configurando");
+       tft.setTextSize(1);
+       tft.setCursor(25,100);
+       tft.print("rede");
+       
+       Serial.println("Abertura Portal"); //Abre o portal
+       wifiManager.resetSettings();       //Apaga rede salva anteriormente
+       delay(20);
+            
+       //callback para quando entra em modo de configuração AP
+       wifiManager.setAPCallback(configModeCallback); 
+       //callback para quando se conecta em uma rede, ou seja, quando passa a trabalhar em modo estação
+       wifiManager.setSaveConfigCallback(saveConfigCallback); 
+            
+       if(!wifiManager.autoConnect("ESP_EST_METEOROLOGICA", "12345678") ){ //Nome da Rede e Senha gerada pela ESP     
+           Serial.println("Falha ao conectar"); //Se caso não conectar na rede mostra mensagem de falha
+           delay(2000);
+           wifiManager.resetSettings();  
+           ESP.reset(); //Reinicia ESP após não conseguir conexão na rede 
+       }else{       //Se caso conectar 
+           Serial.println("Conectado na Rede!!!");
+           delay(1000);
+           
+           ESP.restart(); //Reinicia ESP após conseguir conexão na rede 
+       }  
+    }
+}
+
+//callback que indica que o ESP entrou no modo AP
+void configModeCallback (WiFiManager *myWiFiManager) {  
+  Serial.println("Entrou no modo de configuração");
+  Serial.println(WiFi.softAPIP()); //imprime o IP do AP
+  Serial.println(myWiFiManager->getConfigPortalSSID()); //imprime o SSID criado da rede
+}
+ 
+//Callback que indica que salvamos uma nova rede para se conectar (modo estação)
+void saveConfigCallback () {
+  Serial.println("Configuração salva");
 }
