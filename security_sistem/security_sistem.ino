@@ -1,24 +1,27 @@
 //libraries
-#include <SPI.h>
 #include <MFRC522.h>
+#include <SPI.h>
 #include <NTPClient.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
-#include <FirebaseArduino.h>
+#include <FirebaseESP8266.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
+#include <WiFiManager.h>
 
-#define RST_PIN 5 //D1
-#define SS_PIN 4 //D2
-#define PIR_PIN 16 //D0
-#define VERM_LED 2 //D4
-#define VERD_LED 0 //D3
-#define RELE1_PIN 3 //rx
-//#define RELE2_PIN 1 //tx
+#define RST_PIN   D1
+#define SS_PIN    D2
+#define PIR_PIN   D0
+#define VERM_LED  D3
+#define VERD_LED  D4
+#define RELE1_PIN 3   //rx
+#define RESET_PIN D8   
 #define LUZ_PIN A0
 
 #define FIREBASE_HOST "your firebase id credentials"
 #define FIREBASE_AUTH "your firebase authorization"
+
+FirebaseData data;
 
 const long utcOffsetInSeconds = -10800;
 // Define NTP Client to get time
@@ -27,153 +30,168 @@ NTPClient timeClient(ntpUDP, "south-america.pool.ntp.org", utcOffsetInSeconds);
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 
-unsigned long millisSeg = 0;
-unsigned long millisCard = 0;
-unsigned long millisLed = 0;
-unsigned long millisInvaded = 0;
-float value = 0;
-int luz = 0, countAway = 0, countHome = 0, count = 0, choice = 0, choice2 = 0, out = 0;
-int timeConnect = 1000;
-bool statuss = false;
+WiFiManager wifiManager;//Objeto de manipulação do wi-fi
 
-const char* ssid = "your ssid";
-const char* password = "your password"; 
+unsigned long millisInvaded = 0, millisCard = 0, millisLed = 0;
+
+int luz = 0, cont = 0;
+bool presence = false, alarm = false, startedWiFi = false, cardCheck = false;
+
+// network
+const char* ssid = "";      // put your ssid with start connection
+const char* password = "";  // put your password with start connection
 
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 String path = "", user = "";
 String id = String(ESP.getFlashChipId());
   
 void setup() {
+  delay(2000);
+  
   Serial.begin(115200);   // Initiate a serial communication
+  
   SPI.begin();      // Initiate  SPI bus
   mfrc522.PCD_Init();   // Initiate MFRC522
-  
-  // Inicializa a EEPROM para a versão 
-  EEPROM.begin(4);
+//  mfrc522.PCD_DumpVersionToSerial();  // Show details of PCD - MFRC522 Card Reader details
+
+  Serial.println("config");
   
   pinMode(PIR_PIN, INPUT);
   pinMode(LUZ_PIN, INPUT);
+  pinMode(RESET_PIN, INPUT);
   pinMode(VERM_LED, OUTPUT);
   pinMode(VERD_LED, OUTPUT);
   pinMode(RELE1_PIN, OUTPUT);
-  //pinMode(RELE2_PIN, OUTPUT);
   
   digitalWrite(VERD_LED, LOW);
   digitalWrite(VERM_LED, LOW);
   digitalWrite(RELE1_PIN,HIGH);
-  
-  WiFi.begin(ssid, password);
- 
-  Serial.println("Conectando");
-  int cont = 0;
-  cont = connectWifi(timeConnect);
-  if(cont > timeConnect -1){
-     //wifiManager.resetSettings();
-  }else{
-     Serial.println("conectado.");
-     Serial.println(WiFi.localIP());
-       
-     Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH); 
 
-     FirebaseObject object = Firebase.get("devices-path/"+id);
-     user = object.getString("user");
-     path = object.getString("path");
-  
-     timeClient.begin();
-     millisCard = millis();
-  }
-  countAway = EEPROM.read(0);
+  millisLed = millis();
+  delay(2000);
 }
 
 void loop() {
-  if(WiFi.status() == WL_CONNECTED){
-    if(out == 0)
-      digitalWrite(VERD_LED, LOW);
-    else
-      digitalWrite(VERD_LED, HIGH);
-    digitalWrite(VERM_LED, LOW);
-  }
+
+    resetClick();
     
-  if((millis() - millisCard) > 4000){
-    if(out == 1){
-       if(statuss == false)
-          value = digitalRead(PIR_PIN);
-       //Serial.println(value);
-       if(value == HIGH && statuss == false){
-           Serial.println("alguem entrou e nao desativou o alarme");
-           statuss = true;
-           millisSeg = millis();
-           countAway++;
-           count++;  
-           EEPROM.write(0, countAway);
-           EEPROM.commit();
-           
-           Serial.print("Count Away: ");
-           Serial.println(countAway);
-           String date = "";
-           if(WiFi.status() != WL_CONNECTED){
-              Serial.println("Desconectado");
-              digitalWrite(VERD_LED, LOW);
-              connectWifi(timeConnect);
-              Serial.println("Conectado a rede sem fio ");
-           }
-           if(WiFi.status() == WL_CONNECTED){
-              date = getDate();
-              StaticJsonBuffer<200> jsonBuffer;
-              // create an object
-              JsonObject& obj = jsonBuffer.createObject();
-              obj["date"] = date;
-              Firebase.push("path history", obj);
-              Firebase.setInt("path device in firebase", countAway);
-           
-              Serial.println(date);
-           }
-           millisInvaded = millis();
-       }
-       if((millis() - millisSeg) > 5000 && statuss == true){
-          statuss = false;
-       }
-       
-       if(count > 0){
-           millisInvaded = checkCardLed(choice, choice2, millisInvaded, 700);
-       }
-    }else{
-        luz = analogRead(LUZ_PIN);
-        //Serial.print("LUZ: ");
-        //Serial.println(luz);
+    luz = analogRead(LUZ_PIN);
+    Serial.print("LUZ: ");
+    Serial.println(luz);
         
-        if(luz > 1000){
-          if(statuss == false)
-            value = digitalRead(PIR_PIN);
-          if(value == HIGH && statuss == false){
-            Serial.println("Presença");
-            statuss = true;
-            millisSeg = millis();
-            digitalWrite(RELE1_PIN,LOW);
-            countHome++;
-            
-            Serial.print("Count Home: ");
-            Serial.println(countHome);
-          }
-        }else if(luz < 1000 && statuss == false){
-            millisSeg = 0;
-            digitalWrite(RELE1_PIN,HIGH);
-        }
-        if( (millis() - millisSeg) > 10000 && statuss == true){
-            Serial.println("10 segundos");
-            statuss = false;
-            digitalWrite(RELE1_PIN,HIGH);
-        }
+    presence =  getPresence();
+      
+    if(luz < 200){
+      Serial.println(presence);
+      if(presence == 1){
+         digitalWrite(RELE1_PIN,LOW);
+      }else{
+         digitalWrite(RELE1_PIN,HIGH);
+         millisInvaded = 0;
+      }
+    }else{
+       digitalWrite(RELE1_PIN,HIGH);
     }
-  delay(50);
-  
+
+    if(alarm){
+      if(cont == 1){
+        millisInvaded = millis();
+      }
+    }  
+
+    if(millisInvaded > 0){
+      if(millis() - millisInvaded > 10000){
+          if(alarm){
+              if(WiFi.status() == WL_CONNECTED){
+                  Serial.println("Send firebase ");
+                  String date = getDate();
+                  Serial.print("Date: ");
+                  Serial.println(date);
+
+                  FirebaseJson json;                
+                  json.set("date", date);
+                  
+                  if (Firebase.pushJSON(data, "your path to history", json)) {
+                    Serial.println("Add json to firebase");
+                  }
+              }
+          }
+          millisInvaded = 0;
+      }
+    }
+    delay(50);
+
+    if(cardCheck){
+      if(millis() - millisCard > 2000){
+        millisCard = 0;
+        cardCheck = false;
+      }
+    }else{
+        getCardCheck();
+    }
+
+    if(WiFi.status() == WL_CONNECTED){
+      digitalWrite(VERM_LED, LOW);
+      if(alarm){
+        if(millis() - millisLed < 300){
+          digitalWrite(VERD_LED, HIGH);
+        }else if(millis() - millisLed < 600){
+          digitalWrite(VERD_LED, LOW);
+        }else{
+          millisLed = millis();
+        }
+      }else{
+        digitalWrite(VERD_LED, HIGH);
+      }
+      
+      if(!startedWiFi){
+        Serial.print("Conectado wifi: ");
+        Serial.println(WiFi.SSID());
+        Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH); 
+    
+        DynamicJsonDocument doc(1024);
+        if(Firebase.get(data, "your unique id devices path")){
+           deserializeJson(doc, data.jsonString());
+           String aux = doc["user"];
+           user = aux;
+           String aux2 = doc["path"];
+           path = aux2;
+        }
+        timeClient.begin();
+        startedWiFi = true;
+      }
+    }else{
+      if(WiFi.SSID() != ""){
+        Serial.println("Conectando wifi");
+        connectWiFi();
+      }else{
+        Serial.println("Sem rede");
+        digitalWrite(VERD_LED, LOW);
+        digitalWrite(VERM_LED, HIGH);
+      }
+      startedWiFi = false;
+    }
+}
+
+boolean getPresence(){
+    presence = digitalRead(PIR_PIN);
+    if(presence == 1)
+      cont++;
+    else
+      cont = 0;
+    
+    return presence; 
+}
+
+void getCardCheck(){
+   
   // Look for new cards
-  if ( ! mfrc522.PICC_IsNewCardPresent()) {
+  if (!mfrc522.PICC_IsNewCardPresent()) {
     return;
   }
   
   // Select one of the cards
-  if ( ! mfrc522.PICC_ReadCardSerial()) {
+  if (!mfrc522.PICC_ReadCardSerial()) {
     return;
   }
   
@@ -191,62 +209,75 @@ void loop() {
   }
   content.toUpperCase();
   Serial.println();
-  if (content.substring(1) == "your card uid"){// change UID of the card that you want to give access
+  if (content.substring(1) == "A7 A7 CE 2C" || 
+      content.substring(1) == "D3 81 7A 1A" || 
+      content.substring(1) == "F9 8F 7D 59" || 
+      content.substring(1) == "60 C2 2D E3")
+  {   // change UID of the card that you want to give access
     Serial.println(" Access Granted ");
     Serial.println(" Welcome Mr.Circuit ");
     Serial.println(" Have FUN ");
     Serial.println();
-    if(out == 1){
-      out = 0;
-    }else{
-      out = 1;
-    } 
-    choice = VERD_LED;
-    choice2 = VERM_LED;
-  }else   {
-    Serial.println(" Access Denied ");
-    choice = VERM_LED;
-    choice2 = VERD_LED;
-  }
-  millisSeg = 0;
-  millisCard = millis();
-  millisLed = millis();
-  digitalWrite(RELE1_PIN, HIGH);
-  statuss = false;
-  count = 0;
-  }else{
-    millisLed = checkCardLed(choice, choice2, millisLed, 200);
-  }
-} 
 
-unsigned long checkCardLed(int ledChoice, int ledOff, unsigned long millisChoice, int timeMillis){
-    digitalWrite(ledOff, LOW);
-    if((millis() - millisChoice) > timeMillis){
-       digitalWrite(ledChoice, LOW);
-    }else{
-       digitalWrite(ledChoice, HIGH);
-    }
-    if((millis() - millisChoice) > timeMillis * 2){
-       millisChoice = millis();
-    }
-    return millisChoice;
+    alarm = !alarm;
+  }else{
+    Serial.println(" Access Denied ");
+  }
+
+  millisCard = millis();
+  cardCheck = true;
 }
 
-int connectWifi(int timeConnect){
-    int cont = 0;
-    Serial.println("Conectando wifi");
-    while(WiFi.status() != WL_CONNECTED && cont < timeConnect){
-       digitalWrite(VERM_LED,HIGH);
-       delay(200);
-       digitalWrite(VERM_LED,LOW);
-       delay(200);
+
+void connectWiFi(){
+    if(WiFi.status() != WL_CONNECTED){
+       resetClick();
+       if(millis() - millisLed < 300){
+          digitalWrite(VERM_LED, HIGH);
+       }else if(millis() - millisLed < 600){
+          digitalWrite(VERM_LED, LOW);
+       }else{
+          millisLed = millis();
+       }
        Serial.print(".");
-       cont++;
     }
-    if(cont > timeConnect - 1)
-      return cont;
-    else
-      return 0;
+}
+
+void resetClick(){
+    if (digitalRead(RESET_PIN) == HIGH) {
+      Serial.println("Abertura Portal"); //Abre o portal
+      digitalWrite(VERM_LED,HIGH); //Acende LED Vermelho
+      digitalWrite(VERD_LED,LOW);
+      wifiManager.resetSettings();       //Apaga rede salva anteriormente
+      delay(20);
+      
+      //callback para quando entra em modo de configuração AP
+      wifiManager.setAPCallback(configModeCallback); 
+      //callback para quando se conecta em uma rede, ou seja, quando passa a trabalhar em modo estação
+      wifiManager.setSaveConfigCallback(saveConfigCallback); 
+      
+      if(!wifiManager.autoConnect("ESP_SYSTEM", "12345678") ){ //Nome da Rede e Senha gerada pela ESP
+      
+        Serial.println("Falha ao conectar"); //Se caso não conectar na rede mostra mensagem de falha
+        delay(2000);
+        wifiManager.resetSettings();  
+        ESP.reset(); //Reinicia ESP após não conseguir conexão na rede
+      
+      }else{       //Se caso conectar 
+        Serial.println("Conectado na Rede!!!");
+        FirebaseJson json;                
+        json.set("id", id);
+        json.set("type", "SECURITYSYSTEM");
+
+        if (Firebase.pushJSON(data, "your path of available devices", json)) {
+          Serial.println("Add json to firebase");
+        }
+
+        delay(1000);
+     
+        ESP.restart(); //Reinicia ESP após conseguir conexão na rede 
+      }
+   }
 }
 
 String getDate(){
@@ -274,4 +305,16 @@ String getDate(){
   date += hour;
 
   return date;
+}
+
+//callback que indica que o ESP entrou no modo AP
+void configModeCallback (WiFiManager *myWiFiManager) {  
+  Serial.println("Entrou no modo de configuração");
+  Serial.println(WiFi.softAPIP()); //imprime o IP do AP
+  Serial.println(myWiFiManager->getConfigPortalSSID()); //imprime o SSID criado da rede
+}
+ 
+//Callback que indica que salvamos uma nova rede para se conectar (modo estação)
+void saveConfigCallback () {
+  Serial.println("Configuração salva");
 }
