@@ -18,8 +18,8 @@
 #define RESET_PIN D8   
 #define LUZ_PIN A0
 
-#define FIREBASE_HOST "your firebase id credentials"
-#define FIREBASE_AUTH "your firebase authorization"
+#define FIREBASE_HOST "sparky-18bea.firebaseio.com" //your firebase id credentials"
+#define FIREBASE_AUTH "Mt2X1Qhsp62JMRV1ZUr30JrP5mcmkY5UFdPdeypo" //your firebase authorization"
 
 FirebaseData data;
 
@@ -32,10 +32,11 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 
 WiFiManager wifiManager;//Objeto de manipulação do wi-fi
 
-unsigned long millisInvaded = 0, millisCard = 0, millisLed = 0;
+unsigned long millisInvaded = 0, millisCard = 0, millisLed = 0, millisRele = 0, millisPir = 0, millisSetAlarm = 0;
 
 int luz = 0, cont = 0;
-bool presence = false, alarm = false, startedWiFi = false, cardCheck = false;
+bool alarm = false, startedWiFi = false, cardCheck = false, startedOn = false;
+int currentValue = 0, lastValue = -1; 
 
 // network
 const char* ssid = "";      // put your ssid with start connection
@@ -48,15 +49,16 @@ String id = String(ESP.getFlashChipId());
 void setup() {
   delay(2000);
   
-  Serial.begin(115200);   // Initiate a serial communication
+  Serial.begin(115200);   // Inicializa comunicação serial 
   
-  SPI.begin();      // Initiate  SPI bus
-  mfrc522.PCD_Init();   // Initiate MFRC522
-//  mfrc522.PCD_DumpVersionToSerial();  // Show details of PCD - MFRC522 Card Reader details
+  SPI.begin();          // Inicializa  SPI bus
+  mfrc522.PCD_Init();   // Inicializa  MFRC522
+  //  mfrc522.PCD_DumpVersionToSerial();  // Mostra detalhes do MFRC522 Card Reader
 
   Serial.println("config");
-  
-  pinMode(PIR_PIN, INPUT);
+
+  // defini I/O dos botoes  e leds
+  pinMode(PIR_PIN, INPUT_PULLUP);
   pinMode(LUZ_PIN, INPUT);
   pinMode(RESET_PIN, INPUT);
   pinMode(VERM_LED, OUTPUT);
@@ -68,39 +70,70 @@ void setup() {
   digitalWrite(RELE1_PIN,HIGH);
 
   millisLed = millis();
+
+  // verifica se o sensor de presença inicia ativado
+  currentValue = digitalRead(PIR_PIN);
+  Serial.print("currentValue started: ");
+  Serial.println(currentValue);
+
+  if(currentValue == 1){
+    startedOn = true;
+  }
   delay(2000);
 }
 
 void loop() {
 
-    resetClick();
-    
+    // obtem a quantidade de luz
     luz = analogRead(LUZ_PIN);
-    Serial.print("LUZ: ");
-    Serial.println(luz);
-        
-    presence =  getPresence();
-      
-    if(luz < 200){
-      Serial.println(presence);
-      if(presence == 1){
+
+    // verifica se o botão de reset de wifi foi ativado
+    resetClick();
+
+    // obtem se existe presença ou não
+    getPresence();
+
+    // se a quantidade de luz for baixa ativa rele para acender lampada
+    if(luz < 300){
+//      Serial.print("LUZ: ");
+//      Serial.println(luz);
+//      Serial.print("cont: ");
+//      Serial.println(cont);
+
+      // ativa lampada
+      if(cont == 1 && millisRele == 0){
          digitalWrite(RELE1_PIN,LOW);
-      }else{
-         digitalWrite(RELE1_PIN,HIGH);
-         millisInvaded = 0;
+         Serial.println("RELE ON");
+         millisRele = millis();
       }
-    }else{
-       digitalWrite(RELE1_PIN,HIGH);
     }
 
-    if(alarm){
-      if(cont == 1){
-        millisInvaded = millis();
+    // verifica se passou 15 segundos da lampada acesa
+    if(millisRele > 0){
+      if(millis() - millisRele > 15000){
+         Serial.println("RELE OFF");
+         digitalWrite(RELE1_PIN,HIGH);
+         millisRele = 0;
       }
-    }  
+    }
 
+    // espera 20 segundos para verificar presenca
+    if(millisSetAlarm > 0){
+      if(millis() - millisSetAlarm > 20000){
+        // verifica se o alarme está ativado e se existe presenca
+        if(alarm){
+          if(cont == 1){
+            millisInvaded = millis();
+          }
+        }  
+        
+      }
+    }
+    
+    // verifica se passou 10 segundos e não foi passado o cartão para desativar o alarme
     if(millisInvaded > 0){
       if(millis() - millisInvaded > 10000){
+          // se não desativou o alarme envia uma notificação para o firebase com o dia e a hora
           if(alarm){
               if(WiFi.status() == WL_CONNECTED){
                   Serial.println("Send firebase ");
@@ -110,8 +143,10 @@ void loop() {
 
                   FirebaseJson json;                
                   json.set("date", date);
+
+                  String pathFirebase = "users/"+user+"/devices/"+path+"/history/";//"your path to history";
                   
-                  if (Firebase.pushJSON(data, "your path to history", json)) {
+                  if (Firebase.pushJSON(data, pathFirebase, json)) {
                     Serial.println("Add json to firebase");
                   }
               }
@@ -119,38 +154,37 @@ void loop() {
           millisInvaded = 0;
       }
     }
-    delay(50);
 
-    if(cardCheck){
-      if(millis() - millisCard > 2000){
-        millisCard = 0;
-        cardCheck = false;
-      }
-    }else{
-        getCardCheck();
-    }
-
+    // verifica se está conectado na internet
     if(WiFi.status() == WL_CONNECTED){
       digitalWrite(VERM_LED, LOW);
+
+      // se alarme estiver ativado a led verde fica piscando
       if(alarm){
-        if(millis() - millisLed < 300){
-          digitalWrite(VERD_LED, HIGH);
-        }else if(millis() - millisLed < 600){
-          digitalWrite(VERD_LED, LOW);
-        }else{
-          millisLed = millis();
+        if(millisSetAlarm > 0){
+          if(millis() - millisSetAlarm > 20000){
+            if(millis() - millisLed < 300){
+              digitalWrite(VERD_LED, HIGH);
+            }else if(millis() - millisLed < 600){
+              digitalWrite(VERD_LED, LOW);
+            }else{
+              millisLed = millis();
+            }
+          }
         }
       }else{
         digitalWrite(VERD_LED, HIGH);
       }
-      
+
+      // simula a função setup para comunicação do firebase e ntc
       if(!startedWiFi){
         Serial.print("Conectado wifi: ");
         Serial.println(WiFi.SSID());
         Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH); 
     
         DynamicJsonDocument doc(1024);
-        if(Firebase.get(data, "your unique id devices path")){
+        String pathFirebase = "devices-path/"+id;//"your unique id devices path";
+        if(Firebase.get(data, pathFirebase)){
            deserializeJson(doc, data.jsonString());
            String aux = doc["user"];
            user = aux;
@@ -171,18 +205,49 @@ void loop() {
       }
       startedWiFi = false;
     }
-}
-
-boolean getPresence(){
-    presence = digitalRead(PIR_PIN);
-    if(presence == 1)
-      cont++;
-    else
-      cont = 0;
     
-    return presence; 
+    delay(10);
+
+    // verifica se as tag RDIF foram inseridas
+    if(cardCheck){
+      if(millis() - millisCard > 2000){
+        millisCard = 0;
+        cardCheck = false;
+      }
+    }else{
+        getCardCheck();
+    }
 }
 
+// função que verifica a presença
+void getPresence(){
+
+    // le dados do sensor
+    currentValue = digitalRead(PIR_PIN);
+    //Serial.println(currentValue);
+
+    // verifica mudança da variável
+    if(lastValue != currentValue){
+         // sem presença
+        if(currentValue == 0)
+            cont = 0;
+
+        // vefica se não estartou on e se o valor da presença é on
+        if(lastValue == 0 && currentValue == 1 && startedOn == true)
+            startedOn = false;
+            
+        // substitui o valor antigo da variavel caso diferente
+        lastValue = currentValue;
+    }
+
+    // presenca e não estartou on
+    if(currentValue == 1 && startedOn == false)
+        cont++;
+
+    delay(10);
+}
+
+// função que verifica a presença de tag RDIF
 void getCardCheck(){
    
   // Look for new cards
@@ -220,6 +285,12 @@ void getCardCheck(){
     Serial.println();
 
     alarm = !alarm;
+
+    if(alarm)
+      millisSetAlarm = millis();
+    else
+      millisSetAlarm = 0;
+      
   }else{
     Serial.println(" Access Denied ");
   }
@@ -228,7 +299,7 @@ void getCardCheck(){
   cardCheck = true;
 }
 
-
+// função que verifica WIFI
 void connectWiFi(){
     if(WiFi.status() != WL_CONNECTED){
        resetClick();
@@ -243,6 +314,7 @@ void connectWiFi(){
     }
 }
 
+// função de click do botao de reset do wifi
 void resetClick(){
     if (digitalRead(RESET_PIN) == HIGH) {
       Serial.println("Abertura Portal"); //Abre o portal
@@ -269,7 +341,7 @@ void resetClick(){
         json.set("id", id);
         json.set("type", "SECURITYSYSTEM");
 
-        if (Firebase.pushJSON(data, "your path of available devices", json)) {
+        if (Firebase.pushJSON(data, "available-devices/", json)) {
           Serial.println("Add json to firebase");
         }
 
@@ -280,6 +352,7 @@ void resetClick(){
    }
 }
 
+// função que obtem os dados de dia e hora
 String getDate(){
   timeClient.update();
   String date = "";
