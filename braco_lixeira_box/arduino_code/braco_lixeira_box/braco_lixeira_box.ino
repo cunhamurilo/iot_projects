@@ -48,6 +48,7 @@ void setup() {
   pwm.setPWMFreq(SERVO_FREQ);  // Analog servos run at ~50 Hz updates
 
   pwm.setPWM(15, 0, 300);
+  pwm.setPWM(14, 0, 200);
 }
 
 void loop() {
@@ -144,13 +145,14 @@ void check_serial() {
 //    Serial.println(resp);
     if (resp.compareTo("new_email")) {
       pwm.setPWM(15, 0, 150);
-      pwm.setPWM(14, 0, 150);
+      pwm.setPWM(14, 0, 100);
       millisEmail = millis();
     }
   }
 
-  if ( (millis() - millisEmail) > 1800000 ) {
+  if ( (millis() - millisEmail) > 1200000 ) {
     pwm.setPWM(15, 0, 300);
+    pwm.setPWM(14, 0, 200);
     millisEmail = 0;
   }
 }
